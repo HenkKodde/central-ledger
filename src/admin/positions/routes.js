@@ -1,25 +1,25 @@
 const Handler = require('./handler')
 // const Auth = require('../auth')
 const Permissions = require('../../domain/security/permissions')
-const RouteConfig = require('../route-config')
+const RouteConfig = require('../../shared/routeConfig')
 const tags = ['api', 'positions']
 const Joi = require('joi')
 
 module.exports = [
   {
     method: 'GET',
-    path: '/positions',
-    handler: Handler.calculateForAllAccounts,
+    path: '/TODO/positions',
+    handler: Handler.calculateForAllParticipants,
     options: RouteConfig.config(tags, Permissions.POSITIONS_LIST)
   },
   {
     method: 'GET',
-    path: '/positions/{name}',
-    handler: Handler.calculateForAccount,
+    path: '/TODO/positions/{name}',
+    handler: Handler.calculateForParticipant,
     options: RouteConfig.config(tags, Permissions.POSITIONS_VIEW, {
       validate: {
         params: {
-          name: Joi.string().required().description('Account Name required')
+          name: Joi.string().required().description('Participant Name required')
         }
       }
     })

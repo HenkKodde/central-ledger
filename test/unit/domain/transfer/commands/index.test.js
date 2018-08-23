@@ -2,17 +2,14 @@
 
 const Test = require('tapes')(require('tape'))
 const Sinon = require('sinon')
-const P = require('bluebird')
 const Uuid = require('uuid4')
-const Eventric = require('../../../../../src/eventric')
-const TransferCommands = require('../../../../../src/domain/transfer/commands')
+const TransferCommands = require('../../../../../src/domain/transfer')
 
-Test('Eventric Transfer index test', indexTest => {
+Test('Transfer index test', indexTest => {
   let sandbox
 
   indexTest.beforeEach(t => {
-    sandbox = Sinon.sandbox.create()
-    sandbox.stub(Eventric, 'getContext')
+    sandbox = Sinon.createSandbox()
     t.end()
   })
 
@@ -22,39 +19,34 @@ Test('Eventric Transfer index test', indexTest => {
   })
 
   indexTest.test('prepare should', prepareTest => {
-    prepareTest.test('execute prepare command on context', t => {
+    prepareTest.test('execute prepare command on context', async (t) => {
       let command = sandbox.stub()
       let expected = {}
       command.returns(expected)
-      Eventric.getContext.returns(P.resolve({ command: command }))
 
       let payload = {}
 
-      TransferCommands.prepare(payload)
-      .then(tfr => {
-        t.ok(command.calledWith('PrepareTransfer', payload))
-        t.equal(tfr, expected)
-        t.end()
-      })
+      const trf = await TransferCommands.prepare(payload)
+      t.equal(trf, expected)
+      t.end()
     })
 
     prepareTest.end()
   })
 
-  indexTest.test('fulfill should', fulfillTest => {
-    fulfillTest.test('execute fulfill command on context', t => {
+  indexTest.test('fulfil should', fulfillTest => {
+    fulfillTest.test('execute fulfil command on context', t => {
       let command = sandbox.stub()
       let expected = {}
       command.returns(expected)
-      Eventric.getContext.returns(P.resolve({ command: command }))
 
       let payload = {}
-      TransferCommands.fulfill(payload)
-      .then(result => {
-        t.ok(command.calledWith('FulfillTransfer', payload))
-        t.equal(result, expected)
-        t.end()
-      })
+      TransferCommands.fulfil(payload)
+        .then(result => {
+          t.ok(command.calledWith('FulfillTransfer', payload))
+          t.equal(result, expected)
+          t.end()
+        })
     })
     fulfillTest.end()
   })
@@ -64,15 +56,14 @@ Test('Eventric Transfer index test', indexTest => {
       let command = sandbox.stub()
       let expected = {}
       command.returns(expected)
-      Eventric.getContext.returns(P.resolve({ command: command }))
 
       let rejection = { id: Uuid(), rejection_reason: 'another excuse' }
       TransferCommands.reject(rejection)
-      .then(result => {
-        t.ok(command.calledWith('RejectTransfer', Sinon.match({ id: rejection.id, rejection_reason: rejection.rejection_reason })))
-        t.equal(result, expected)
-        t.end()
-      })
+        .then(result => {
+          t.ok(command.calledWith('RejectTransfer', Sinon.match({ id: rejection.id, rejection_reason: rejection.rejection_reason })))
+          t.equal(result, expected)
+          t.end()
+        })
     })
     rejectTest.end()
   })
@@ -82,14 +73,13 @@ Test('Eventric Transfer index test', indexTest => {
       let command = sandbox.stub()
       let expected = {}
       command.returns(expected)
-      Eventric.getContext.returns(P.resolve({ command: command }))
       let payload = {id: Uuid(), settlement_id: Uuid()}
       TransferCommands.settle(payload)
-      .then(result => {
-        t.ok(command.calledWith('SettleTransfer', Sinon.match(payload)))
-        t.equal(result, expected)
-        t.end()
-      })
+        .then(result => {
+          t.ok(command.calledWith('SettleTransfer', Sinon.match(payload)))
+          t.equal(result, expected)
+          t.end()
+        })
     })
     settleTest.end()
   })

@@ -11,7 +11,7 @@ Test('token handler', handlerTest => {
   let sandbox
 
   handlerTest.beforeEach(test => {
-    sandbox = Sinon.sandbox.create()
+    sandbox = Sinon.createSandbox()
     sandbox.stub(JWT)
     sandbox.stub(Sidecar, 'logRequest')
     test.end()
@@ -23,14 +23,14 @@ Test('token handler', handlerTest => {
   })
 
   handlerTest.test('create should', createTest => {
-    createTest.test('create token from user key', async function (test) {
-      const userKey = 'user-key'
-      const account = { accountId: 1 }
+    createTest.test('create token from party key', async function (test) {
+      const userKey = 'party-key'
+      const participant = { participantId: 1 }
       const token = 'generated-token'
       JWT.create.withArgs(userKey).returns(P.resolve(token))
       const request = {
         auth: {
-          credentials: account
+          credentials: participant
         },
         payload: {
           key: userKey

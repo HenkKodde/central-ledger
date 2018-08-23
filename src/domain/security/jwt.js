@@ -4,12 +4,12 @@ const JWT = require('jsonwebtoken')
 const Promise = require('bluebird')
 const Config = require('../../lib/config')
 const Errors = require('../../errors')
-const SecurityService = require('./index')
+const SecurityService = {}
 
 const create = (key) => {
   const expiresIn = (Config.TOKEN_EXPIRATION || 3600000) / 1000
-  return SecurityService.getUserByKey(key)
-    .then(user => JWT.sign({ userInfo: { userId: user.userId } }, Config.ADMIN_SECRET, { algorithm: 'HS512', expiresIn, issuer: Config.HOSTNAME }))
+  return SecurityService.getPartyByKey(key)
+    .then(party => JWT.sign({ userInfo: { partyId: party.partyId } }, Config.ADMIN_SECRET, { algorithm: 'HS512', expiresIn, issuer: Config.HOSTNAME }))
 }
 
 const verify = (token) => {
@@ -21,16 +21,16 @@ const verify = (token) => {
       return resolve(decoded)
     })
   })
-  .then(decoded => {
-    const userId = decoded.userInfo.userId
-    return Promise.props({
-      user: SecurityService.getUserById(userId),
-      roles: SecurityService.getUserRoles(userId)
+    .then(decoded => {
+      const partyId = decoded.userInfo.partyId
+      return Promise.props({
+        party: SecurityService.getPartyById(partyId),
+        role: SecurityService.getPartyRole(partyId)
+      })
     })
-  })
-  .catch(Errors.NotFoundError, () => {
-    throw new Errors.UnauthorizedError('Invalid token')
-  })
+    .catch(Errors.NotFoundError, () => {
+      throw new Errors.UnauthorizedError('Invalid token')
+    })
 }
 
 module.exports = {

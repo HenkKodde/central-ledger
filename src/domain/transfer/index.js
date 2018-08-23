@@ -1,95 +1,132 @@
+/*****
+ License
+ --------------
+ Copyright © 2017 Bill & Melinda Gates Foundation
+ The Mojaloop files are made available by the Bill & Melinda Gates Foundation under the Apache License, Version 2.0 (the "License") and you may not use these files except in compliance with the License. You may obtain a copy of the License at
+ http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, the Mojaloop files are distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+ Contributors
+ --------------
+ This is the official list of the Mojaloop project contributors for this file.
+ Names of the original copyright holders (individuals or organizations)
+ should be listed with a '*' in the first column. People who have
+ contributed from an organization can be listed under the organization
+ that actually holds the copyright for their contributions (see the
+ Gates Foundation organization for an example). Those individuals should have
+ their names indented and be marked with a '-'. Email address can be added
+ optionally within square brackets <email>.
+ * Gates Foundation
+ - Name Surname <name.surname@gatesfoundation.com>
+
+ * Georgi Georgiev <georgi.georgiev@modusbox.com>
+ * Shashikant Hirugade <shashikant.hirugade@modusbox.com>
+ --------------
+ ******/
+
 'use strict'
 
+/**
+ * @module src/domain/transfer/
+ */
+
 const P = require('bluebird')
-const TransferQueries = require('./queries')
-const SettleableTransfersReadModel = require('../../models/settleable-transfers-read-model')
-const SettlementsModel = require('../../models/settlements')
-const Commands = require('./commands')
-const Translator = require('./translator')
-const RejectionType = require('./rejection-type')
-const State = require('./state')
-const Events = require('../../lib/events')
+const TransferFacade = require('../../models/transfer/facade')
+const TransferModel = require('../../models/transfer/transfer')
+const TransferStateChangeModel = require('../../models/transfer/transferStateChange')
+const TransferFulfilmentModel = require('../../models/transfer/transferFulfilment')
+const SettlementFacade = require('../../models/settlement/facade')
+const SettlementModel = require('../../models/settlement/settlement')
+const TransferDuplicateCheckModel = require('../../models/transfer/transferDuplicateCheck')
+const TransferObjectTransform = require('./transform')
 const Errors = require('../../errors')
+const Crypto = require('crypto')
+const TransferError = require('../../models/transfer/transferError')
+
+const prepare = async (payload, stateReason = null, hasPassedValidation = true) => {
+  try {
+    return await TransferFacade.saveTransferPrepared(payload, stateReason, hasPassedValidation)
+  } catch (e) {
+    throw e
+  }
+}
+
+const getTransferById = (id) => {
+  return TransferModel.getById(id)
+}
 
 const getById = (id) => {
-  return TransferQueries.getById(id)
+  return TransferFacade.getById(id)
 }
 
 const getAll = () => {
-  return TransferQueries.getAll()
+  return TransferFacade.getAll()
 }
 
-const getFulfillment = (id) => {
-  return getById(id)
-    .then(transfer => {
-      if (!transfer) {
-        throw new Errors.TransferNotFoundError()
-      }
-      if (!transfer.executionCondition) {
-        throw new Errors.TransferNotConditionalError()
-      }
-      if (transfer.state === State.REJECTED) {
-        throw new Errors.AlreadyRolledBackError()
-      }
-      if (!transfer.fulfillment) {
-        throw new Errors.MissingFulfillmentError()
-      }
-      return transfer.fulfillment
-    })
+const getTransferState = (id) => {
+  return TransferStateChangeModel.getByTransferId(id)
 }
 
-const prepare = (payload) => {
-  const transfer = Translator.fromPayload(payload)
-
-  return Commands.prepare(transfer)
-    .then(result => {
-      const t = Translator.toTransfer(result.transfer)
-      Events.emitTransferPrepared(t)
-      return { existing: result.existing, transfer: t }
-    })
+const getTransferInfoToChangePosition = (id, transferParticipantRoleTypeId, ledgerEntryTypeId) => {
+  return TransferFacade.getTransferInfoToChangePosition(id, transferParticipantRoleTypeId, ledgerEntryTypeId)
 }
 
-const reject = (rejection) => {
-  return Commands.reject(rejection)
-    .then(({ alreadyRejected, transfer }) => {
-      const t = Translator.toTransfer(transfer)
-      if (!alreadyRejected) {
-        Events.emitTransferRejected(t)
-      }
-      return { alreadyRejected, transfer: t }
-    })
+const getFulfilment = async (id) => {
+  const transfer = await getById(id)
+  if (!transfer) {
+    throw new Errors.TransferNotFoundError()
+  }
+  if (!transfer.ilpCondition) {
+    throw new Errors.TransferNotConditionalError()
+  }
+  const transferFulfilment = await TransferFulfilmentModel.getByTransferId(id)
+  if (!transferFulfilment) {
+    throw new Errors.TransferNotFoundError()
+  }
+  if (!transferFulfilment.ilpFulfilment) {
+    throw new Errors.MissingFulfilmentError()
+  }
+  return transferFulfilment.ilpFulfilment
 }
 
 const expire = (id) => {
-  return reject({ id, rejection_reason: RejectionType.EXPIRED })
+  // return reject({id, rejection_reason: Enum.RejectionType.EXPIRED})
 }
 
-const fulfill = (fulfillment) => {
-  return Commands.fulfill(fulfillment)
-    .then(transfer => {
-      const t = Translator.toTransfer(transfer)
-      Events.emitTransferExecuted(t, { execution_condition_fulfillment: fulfillment.fulfillment })
-      return t
-    })
-    .catch(Errors.ExpiredTransferError, () => {
-      return expire(fulfillment.id)
-        .then(() => { throw new Errors.UnpreparedTransferError() })
-    })
+const fulfil = async (transferId, payload) => {
+  try {
+    const isCommit = true
+    const transfer = await TransferFacade.saveTransferFulfiled(transferId, payload, isCommit)
+    return TransferObjectTransform.toTransfer(transfer)
+  } catch (err) {
+    throw err
+  }
+}
+
+const reject = async (transferId, payload) => {
+  try {
+    const isCommit = false
+    const stateReason = 'Transaction failed due to user rejection' // TODO: move to generic reason
+    const transfer = await TransferFacade.saveTransferFulfiled(transferId, payload, isCommit, stateReason)
+    return TransferObjectTransform.toTransfer(transfer)
+  } catch (err) {
+    throw err
+  }
 }
 
 const rejectExpired = () => {
-  const rejections = TransferQueries.findExpired().then(expired => expired.map(x => expire(x.transferUuid)))
-  return P.all(rejections).then(rejections => {
-    return rejections.map(r => r.transfer.id)
-  })
+  // TODO: create/recover findExpired method
+  // const rejections = TransferFacade.findExpired().then(expired => expired.map(x => expire(x.transferId)))
+  // return P.all(rejections).then(rejections => {
+  //   return rejections.map(r => r.transfer.id)
+  // })
 }
 
-const settle = () => {
-  const settlementId = SettlementsModel.generateId()
-  const settledTransfers = SettlementsModel.create(settlementId, 'transfer').then(() => {
-    return SettleableTransfersReadModel.getSettleableTransfers().then(transfers => {
+const settle = async () => {
+  const settlementId = SettlementModel.generateId()
+  const settledTransfers = SettlementModel.create(settlementId, 'transfer').then(() => {
+    return SettlementFacade.getSettleableTransfers().then(transfers => {
       transfers.forEach(transfer => {
-        Commands.settle({ id: transfer.transferId, settlement_id: settlementId })
+        TransferFacade.saveSettledTransfers({ id: transfer.transferId, settlement_id: settlementId })
       })
       return transfers
     })
@@ -104,14 +141,124 @@ const settle = () => {
   })
 }
 
-module.exports = {
-  fulfill,
-  getById,
-  getAll,
-  getFulfillment,
-  prepare,
-  reject,
-  rejectExpired,
-  settle
+const saveTransferStateChange = async (stateRecord) => {
+  TransferStateChangeModel.saveTransferStateChange(stateRecord)
 }
 
+/**
+ * @function ValidateDuplicateHash
+ *
+ * @async
+ * @description This checks if there is a matching hash for a transfer request in transferDuplicateCheck table, if it does not exist, it will be inserted
+ *
+ * TransferDuplicateCheckModel.checkAndInsertDuplicateHash called to check the existing hash or insert the hash if not exists in the database
+ *
+ * @param {string} payload - the transfer object
+ *
+ * @returns {object} - Returns the result of the comparision of the hash if exists, otherwise false values, or throws an error if failed
+ * Example:
+ * ```
+ * {
+ *    existsMatching: true,
+ *    existsNotMatching: false
+ * }
+ * ```
+ */
+
+const validateDuplicateHash = async (payload) => {
+  try {
+    if (!payload) {
+      throw new Error('Invalid payload')
+    }
+    const hashSha256 = Crypto.createHash('sha256')
+    let hash = JSON.stringify(payload)
+    hash = hashSha256.update(hash)
+    hash = hashSha256.digest(hash).toString('base64').slice(0, -1) // removing the trailing '=' as per the specification
+
+    let existsMatching = false
+    let existsNotMatching = false
+    const existingHash = await TransferDuplicateCheckModel.checkAndInsertDuplicateHash(payload.transferId, hash)
+    if (existingHash && existingHash.hash) {
+      if (hash === existingHash.hash) {
+        existsMatching = true
+      } else {
+        existsNotMatching = true
+      }
+    }
+    return { existsMatching, existsNotMatching }
+  } catch (err) {
+    throw err
+  }
+}
+
+/**
+ * @function LogTransferError
+ *
+ * @async
+ * @description This will insert a record into the transferError table for the latest transfer stage change id.
+ *
+ * TransferStateChangeModel.getByTransferId called to get the latest transfer state change id
+ * TransferError.insert called to insert the record into the transferError table
+ *
+ * @param {string} transferId - the transfer id
+ * @param {integer} errorCode - the error code
+ * @param {string} errorDescription - the description error
+ *
+ * @returns {integer} - Returns the id of the transferError record if successful, or throws an error if failed
+ */
+
+const logTransferError = async (transferId, errorCode, errorDescription) => {
+  try {
+    const transferStateChange = await TransferStateChangeModel.getByTransferId(transferId)
+    return TransferError.insert(transferStateChange.transferStateChangeId, errorCode, errorDescription)
+  } catch (e) {
+    throw e
+  }
+}
+
+/**
+ * @function GetTransferStateChange
+ *
+ * @async
+ * @description This will get the latest transfer state change name for a given transfer id
+ *
+ * TransferFacade.getTransferStateByTransferId called to get the latest transfer state change id and name
+ *
+ * @param {string} id - the transfer id
+ *
+ * @returns {Object} - Returns the details of transfer state change if successful, or throws an error if failed
+ * Example:
+ * ```
+ * {
+ *    transferStateChangeId: 1,
+ *    transferId: '9136780b-37e2-457c-8c05-f15dbb033b11',
+ *    transferStateId: 'COMMITTED',
+ *    reason: null,
+ *    createdDate: '2018-08-17 09:46:21',
+ *    enumeration: 'COMMITTED'
+ * }
+ * ```
+ */
+
+const getTransferStateChange = (id) => {
+  return TransferFacade.getTransferStateByTransferId(id)
+}
+
+module.exports = {
+  getTransferById,
+  getById,
+  getAll,
+  getTransferState,
+  getTransferInfoToChangePosition,
+  getFulfilment,
+  prepare,
+  fulfil,
+  reject,
+  rejectExpired,
+  settle,
+  saveTransferStateChange,
+  expire,
+  validateDuplicateHash,
+  logTransferError,
+  getTransferStateChange
+}

@@ -11,7 +11,7 @@ Test('token handler', handlerTest => {
   let sandbox
 
   handlerTest.beforeEach(test => {
-    sandbox = Sinon.sandbox.create()
+    sandbox = Sinon.createSandbox()
     sandbox.stub(TokenService)
     sandbox.stub(Sidecar, 'logRequest')
     test.end()
@@ -25,11 +25,11 @@ Test('token handler', handlerTest => {
   handlerTest.test('create should', createTest => {
     createTest.test('create token from auth credentials', async function (test) {
       const token = { token: 'token' }
-      const account = { accountId: 1 }
-      TokenService.create.withArgs(account).returns(P.resolve(token))
+      const participant = { participantId: 1 }
+      TokenService.create.withArgs(participant).returns(P.resolve(token))
       const request = {
         auth: {
-          credentials: account
+          credentials: participant
         }
       }
 
