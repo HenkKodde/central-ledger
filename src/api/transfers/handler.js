@@ -2,8 +2,8 @@
 
 const Validator = require('./validator')
 const TransferService = require('../../domain/transfer')
-const TransferRejectionType = require('../../domain/transfer/rejection-type')
-const TransferTranslator = require('../../domain/transfer/translator')
+const RejectionType = require('../../lib/enum').rejectionType
+const TransferObjectTransform = require('../../domain/transfer/transform')
 const NotFoundError = require('../../errors').NotFoundError
 const Sidecar = require('../../lib/sidecar')
 const Logger = require('@mojaloop/central-services-shared').Logger
@@ -13,7 +13,7 @@ const buildGetTransferResponse = (record) => {
   if (!record) {
     throw new NotFoundError('The requested resource could not be found.')
   }
-  return TransferTranslator.toTransfer(record)
+  return TransferObjectTransform.toTransfer(record)
 }
 
 exports.prepareTransfer = async function (request, h) {
@@ -30,11 +30,11 @@ exports.prepareTransfer = async function (request, h) {
 
 exports.fulfillTransfer = async function (request, h) {
   Sidecar.logRequest(request)
-  const fulfillment = {
+  const fulfilment = {
     id: request.params.id,
-    fulfillment: request.payload
+    fulfilment: request.payload
   }
-  const transfer = await TransferService.fulfill(fulfillment)
+  const transfer = await TransferService.fulfil(fulfilment)
   return h.response(transfer).code(200)
 }
 
@@ -42,9 +42,9 @@ exports.rejectTransfer = async function (request, h) {
   Sidecar.logRequest(request)
   const rejection = {
     id: request.params.id,
-    rejection_reason: TransferRejectionType.CANCELLED,
-    message: request.payload,
-    requestingAccount: request.auth.credentials
+    rejection_reason: RejectionType.CANCELLED,
+    message: request.payload.reason,
+    requestingParticipant: request.auth.credentials
   }
   const result = await TransferService.reject(rejection)
   return h.response(rejection.message).code(result.alreadyRejected ? 200 : 201)
@@ -55,7 +55,7 @@ exports.getTransferById = async function (request, h) {
   return buildGetTransferResponse(record)
 }
 
-exports.getTransferFulfillment = async function (request, h) {
-  const result = await TransferService.getFulfillment(request.params.id)
+exports.getTransferFulfilment = async function (request, h) {
+  const result = await TransferService.getFulfilment(request.params.id)
   return h.response(result).type('text/plain')
 }
